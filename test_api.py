@@ -1,75 +1,47 @@
 import os
-import requests
-import pandas as pd
+from newsapi import NewsApiClient
+from requests.exceptions import RequestException
 from dotenv import load_dotenv
-from googleapiclient.discovery import build
-from IPython.display import display, Image
 
-load_dotenv()
-API_KEY = os.getenv("API_KEY")
-CX = os.getenv("CX")
+def main():
+    load_dotenv()
+    API_KEY = os.getenv("API_NEWS")
 
-query = "рентген легких"
-num_images = 20
+    if not API_KEY:
+        print("Ошибка: API-ключ не найден в .env (переменная NEWS_API_KEY).")
+        return
 
-service = build("customsearch", "v1", developerKey=API_KEY)
+    newsapi = NewsApiClient(api_key=API_KEY)
 
-def google_image_search(query, num_results):
-    image_urls = []
-    start_index = 1
-    while len(image_urls) < num_results:
-        num = min(10, num_results - len(image_urls))
-        res = service.cse().list(
-            q=query,
-            cx=CX,
-            searchType='image',
-            num=num,
-            start=start_index
-        ).execute()
+    query = input("Введите тему, по которой искать новости: ").strip()
 
-        for item in res.get('items', []):
-            image_urls.append({
-                'title': item.get('title'),
-                'link': item.get('link'),
-                'mime': item.get('mime'),
-                'width': item.get('image', {}).get('width'),
-                'height': item.get('image', {}).get('height')
-            })
-        start_index += num
-    return image_urls
+    if not query:
+        print("Тема не может быть пустой.")
+        return
 
-print("Ищем изображения...")
-images = google_image_search(query, num_images)
-
-df = pd.DataFrame(images)
-display(df)
-
-df.to_csv("images_info.csv", index=False, encoding='utf-8')
-print("Информация об изображениях сохранена в images_info.csv")
-
-images_dir = "downloaded_images"
-os.makedirs(images_dir, exist_ok=True)
-
-def download_image(url, path):
     try:
-        response = requests.get(url, timeout=10)
-        response.raise_for_status()
-        with open(path, 'wb') as f:
-            f.write(response.content)
-        print(f"Скачано: {path}")
+        response = newsapi.get_everything(
+            q=query,
+            language="ru",   # можно поставить "en", если нужны англоязычные
+            sort_by="relevancy",
+            page_size=5      # максимум 5 статей
+        )
+
+        articles = response.get("articles", [])
+        if not articles:
+            print(f"По теме '{query}' ничего не найдено.")
+            return
+
+        for i, article in enumerate(articles[:5], start=1):
+            print(f"\nНовость {i}:")
+            print(f"Заголовок: {article.get('title')}")
+            print(f"Описание: {article.get('description')}")
+            print(f"Ссылка: {article.get('url')}")
+
+    except RequestException as e:
+        print("Ошибка при подключении к API:", e)
     except Exception as e:
-        print(f"Ошибка при скачивании {url}: {e}")
+        print("Произошла ошибка:", e)
 
-print("Скачиваем изображения...")
-for idx, row in df.iterrows():
-    image_url = row['link']
-
-
-    file_extension = os.path.splitext(image_url)[1]
-    if not file_extension.lower() in [".jpg", ".jpeg", ".png", ".gif", ".bmp"]:
-        file_extension = ".jpg"
-    file_name = f"image_{idx+1}{file_extension}"
-    file_path = os.path.join(images_dir, file_name)
-    download_image(image_url, file_path)
-
-print("Скачивание завершено.")
+if __name__ == "__main__":
+    main()
